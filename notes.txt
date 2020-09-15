@@ -1,0 +1,172 @@
+### make sure all extensions are .JPG (not .jpg)
+
+awk -F, '{gsub("jpg","JPG",$2);print}' metadata_links.csv > metadata_links.txt
+awk -F, '{gsub("jpg","JPG",$9);print}' images.csv > images.txt
+
+#convert .txt back to csv
+cat images.txt | tr -s '[:blank:]' ',' > images.csv
+cat metadata_links.txt | tr -s '[:blank:]' ',' > metadata_links.csv
+
+#### THIS WORKS!!!!!####
+## match image filenames in local directory to image filenames in link spreadsheet
+cd /Users/katherinemika/Desktop/curation/leon_levy/photos_2012
+links=/Users/katherinemika/Desktop/curation/leon_levy/2012/metadata_links.csv
+for f in *.JPG 
+do 
+    awk -F, -v VAR="$f" 'match($2,VAR) {print}' $links >> valid.txt
+done
+
+wc -l <file> #for line counts
+
+
+#### images that don't have links
+
+ls -l > images.txt #write dir contents to txt
+cat images.txt | tr -s '[:blank:]' ',' > images.csv
+
+#compare $9 in images.csv to $2 in photos_2012
+awk -F, 'FNR==NR{ a[$9]=$0;next } !($2 in a)' sample1.csv links1.csv
+
+#3226 all 2012 links from ochre database 
+#2778 valid links with image matches
+
+#444 links with no matching images
+#2806 image files in dir (420 difference)
+
+#23 images with no matching links? 
+awk -F, 'FNR==NR{ a[$2]=$0;next } !($9 in a)' links1.csv sample1.csv
+
+
+
+#### non matches in 2012_photo_links.csv
+
+
+## create dataset
+cd /Users/katherinemika/Desktop/curation/leon_levy/json/files
+API_TOKEN="20cded30-4640-4741-b4d7-6bb84800e981" 
+SERVER_URL="https://dataverse.harvard.edu"
+DV_ALIAS="images_2012"
+curl -H "X-Dataverse-key: $API_TOKEN" -X POST $SERVER_URL/api/dataverses/$DV_ALIAS/datasets --upload-file "A12_20683.json"
+
+
+for file in *.json
+do
+    curl -H "X-Dataverse-key: $API_TOKEN" -X POST $SERVER_URL/api/dataverses/$DV_ALIAS/datasets --upload-file $file
+done
+
+for file in *.json
+do
+    echo $file
+done
+
+
+for file in *.JPG.json
+do
+    mv "$file" "${file/.JPG.json/.json}"
+done
+
+
+
+#######upload files to dataset
+export API_TOKEN='2089ce09-8a6c-48e2-ae08-af31a1c66b11'
+export FILENAME='science_wasps_xkcd.png'
+export SERVER_URL=https://demo.dataverse.org
+export PERSISTENT_ID='doi:10.70122/FK2/DILZFK'
+curl -H X-Dataverse-key:$API_TOKEN -X POST -F "file=@$FILENAME" -F 'jsonData={"description":"My description.","directoryLabel":"data/subdir1","categories":["Data"], "restrict":"false"}' "$SERVER_URL/api/datasets/:dataset_id/add?dataset_id=$PERSISTENT_ID"
+
+
+for file in *.png | while read P; do
+    echo $P 
+done < 'demo_ids.txt'
+
+
+while read P; do
+    for file in *.png
+    do
+        curl -H X-Dataverse-key:$API_TOKEN -X POST -F "file=@$file" -F 'jsonData={"description":"image file","categories":["Data"], "restrict":"false"}' "$SERVER_URL/api/datasets/:dataset_id/add?dataset_id=$P"
+    done
+done < 'demo_ids.txt'
+
+curl -H X-Dataverse-key:$API_TOKEN -X POST -F "file=@$file" -F 'jsonData={"description":"image file","categories":["Data"], "restrict":"false"}' "$SERVER_URL/api/datasets/$P/add"
+
+export ID=4037817
+
+filename='delete_ids.txt'
+
+while read p; do
+    curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE $SERVER_URL/api/datasets/$p/versions/:draft 
+done < $filename
+
+curl -H "X-Dataverse-key: $API_TOKEN" -X DELETE $SERVER_URL/api/datasets/$p/versions/:draft
+
+
+###### GARBAGE!!! #####
+
+for filename in photos_2012/*.JPG
+do
+    mlr --csv --fs "," put -S 'if (grep "$filename") {$MATCH="yes"} else {$MATCH="no"}' levy_ochre_links.csv
+done
+
+grep "$filename" levy_ochre_links.csv
+echo 
+
+
+mlr --csv --fs "," put -S 'if (grep "$filename") {$MATCH="yes"} else {$MATCH="no"}' levy_ochre_links.csv
+
+for file in sample_12/*.JPG
+do
+    mlr --csv filter '$Filename != $file' levy_ochre_links_validate.csv >> invalid.csv
+done
+
+#cd /sample_12
+for f in *.JPG
+do
+    awk '{if ($2 == "A00_12858.JPG") {print} }' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv
+done
+
+grep "A12" levy_ochre_links_validate.csv >> valid.txt
+
+
+
+mlr --csv filter '$Filename !=~ ""' levy_ochre_links_validate.csv
+
+#### THIS WORKS!!!!!####
+for f in *.JPG 
+do 
+    awk -F, -v VAR="$f" 'match($2,VAR) {print $2}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv >> valid.txt
+done
+
+
+for f in *.JPG 
+do 
+    awk -F, -v VAR="$f" '{if ($2 !~ VAR) {print}}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv
+done
+
+for f in *.JPG
+do
+echo "$f"
+    awk -F, '{
+    if ($2 == "$f") 
+        print "Match!"
+    }' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv
+done
+
+    if ($2 == VAR)
+
+for f in *.JPG 
+do
+awk -F, -v VAR="$f" '{if($2 == VAR) {print}}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv
+done
+
+awk 'BEGIN { for (i = 1; i <= 5; ++i) print i }'
+
+awk -F, ' ($2 == "$f") {print}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv > invalid.txt
+
+
+awk -F, '{if ($2 != "A00_12858.JPG") {print}}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv > invalid.txt
+
+
+awk -F, 'match($2,"A00_12858.JPG") {print}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv
+
+
+for ((i=1; i<=3; i++)); do echo $(awk -F, '{print $2}' /Users/katherinemika/Desktop/curation/leon_levy/levy_ochre_links_validate.csv); done
