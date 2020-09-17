@@ -1,2 +1,12 @@
 *.jpg
 .DS_Store
+junk/
+__pycache__/
+pyDataverse_demo/
+pyDataverse_templates/
+templates/
+2012/junk/
+json/files/
+json/test/
+json/uploaded/
+.ipynb_checkpoints/
