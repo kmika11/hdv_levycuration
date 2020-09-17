@@ -10,3 +10,8 @@ Repo includes:
     - valid_links.csv - csv file of valid OCHRE links to image metadata. 
 3. levy_upload_script.ipynb - Jupyter notebook of uploa workflow
 4. levy_template.json - metadata template
+
+
+TODO: 
+- Add links
+- Write project description
