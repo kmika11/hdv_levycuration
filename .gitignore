@@ -57,3 +57,10 @@ files_to_add.csv
 missing_files.csv
 photos_dois_datasets.csv
 illustrations_dois.csv
+
+# ---- Pipeline outputs ----
+manifests/
+*_missing_files.csv
+*_missing_metadata.csv
+*_file_dois.csv
+.pytest_cache/

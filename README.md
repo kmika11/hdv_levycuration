@@ -1,240 +1,253 @@
 # Leon Levy Expedition to Ashkelon — Dataverse Curation
 
-Working scripts, metadata tables, and notes for depositing the Leon Levy Expedition to
+A config-driven pipeline for depositing file collections into
+[Harvard Dataverse](https://dataverse.harvard.edu), built for the Leon Levy Expedition to
 Ashkelon archive (photographs, illustrations, fieldbooks, pottery registries and readings,
-material culture registry, field reports, videos) into
-[Harvard Dataverse](https://dataverse.harvard.edu).
+material culture registry, field reports, videos, georeferenced imagery).
 
-Files are deposited in batches. Each batch is described by a **file-level metadata table**
-(one row per file), grouped into datasets, deposited with
-[easyDataverse](https://github.com/gdcc/easyDataverse) / [dvuploader](https://github.com/gdcc/python-dvuploader),
-QA'd by hand in the Dataverse UI, then published.
+You supply the files and a CSV with one filename and one OCHRE link per row. The pipeline
+builds the complete metadata table, validates it against the files on disk, creates the
+datasets, uploads them with a resumable manifest, and harvests file DOIs afterward.
 
-> **Status:** this is a working curation repository, not a packaged tool. The pipeline lives
-> mostly in one long notebook with hard-coded paths and per-batch edits. See
-> [Toward a reusable pipeline](#toward-a-reusable-pipeline) for where this is headed.
+**Design principle:** what varies per batch lives in a YAML config; what varies per
+installation lives in `.env`; the code stays fixed. A new collection should be a new config
+file, not a new notebook.
 
 ---
 
-## ⚠️ Before anything else: credentials
+## Quick start
 
-A live-looking Harvard Dataverse API token is currently **hard-coded in plaintext** in at
-least these places:
+```bash
+conda env create -f environment.yml
+conda activate curation
 
-- [upload.py:54](upload.py#L54)
-- [052025LeonLevy_curationScript.ipynb](052025LeonLevy_curationScript.ipynb) (global variables cell, and again in the file-DOI section)
-- [052025LeonLevy_curationScript.md](052025LeonLevy_curationScript.md) (the exported copy of the same)
+cp .env.example .env && chmod 600 .env    # then paste your API tokens
 
-**Action items:**
+python -m levy_curate scaffold configs/geotiffs.yaml   # build metadata table
+python -m levy_curate validate configs/geotiffs.yaml   # check before any network call
+python -m levy_curate plan     configs/geotiffs.yaml   # dry run
+python -m levy_curate deposit  configs/geotiffs.yaml   # create + upload
+python -m levy_curate harvest  configs/geotiffs.yaml   # collect file DOIs
+```
 
-1. Rotate that token in Dataverse (account menu → API Token → Recreate).
-2. Replace every occurrence with `os.environ["DATAVERSE_API_TOKEN"]`.
-3. Add a `.gitignore` covering `.env`, `.DS_Store`, `__pycache__/`, `.ipynb_checkpoints/`,
-   and the bulk data directories — and confirm nothing with a token has ever been committed
-   (`git log -S 'X-Dataverse-key'`).
+Or drive the same steps from [run_batch.ipynb](run_batch.ipynb), which keeps the QA and
+troubleshooting cells alongside.
 
-[file_dois.zsh](file_dois.zsh) already does the right thing: placeholder values you fill in
-from your shell environment.
+`DATAVERSE_TARGET` in `.env` selects the installation and **defaults to `demo`**, so an
+untested run cannot write to production. Depositing to Harvard from the CLI additionally
+requires typing the batch name to confirm.
 
 ---
 
-## Repository layout
+## Commands
 
-### Pipeline code
-
-| Path | What it is |
+| Command | What it does |
 | --- | --- |
-| [052025LeonLevy_curationScript.ipynb](052025LeonLevy_curationScript.ipynb) | **The main pipeline.** Latest end-to-end batch workflow: setup → metadata assembly → dataset creation → deposit → QA/troubleshooting → file DOIs. |
-| [052025LeonLevy_curationScript.md](052025LeonLevy_curationScript.md) | Markdown export of the notebook (readable/greppable without Jupyter; regenerate with `jupyter nbconvert --to markdown`). |
-| [curate.py](curate.py) | Reusable function module: `create_dataset_metadata`, `create_datafile_metadata`, `create_dataset`, `add_files_to_dataset`. The notebook currently re-defines these inline rather than importing them — they have drifted. |
-| [curate_py.txt](curate_py.txt) | Byte-identical copy of `curate.py`. Safe to delete. |
-| [upload.py](upload.py) | One-off script: bulk-upload files to a single existing dataset PID via dvuploader, no metadata creation. |
-| [upload_simple.py](upload_simple.py) | Stub (one line). |
-| [file_dois.zsh](file_dois.zsh) | curl + jq: dump `filename,persistentId,description` for one dataset to CSV. |
-| [illustrations/check_files.zsh](illustrations/check_files.zsh) | Reconciles a metadata CSV against a directory of files; writes `missing_in_directory.csv` and `missing_in_csv.csv`. |
-| [Untitled.ipynb](Untitled.ipynb) | Scratch notebook. |
+| `scaffold` | Enumerate files on disk, merge the partial CSV, derive descriptions / titles / abstracts, write the complete metadata table. Exit 1 if any file still lacks a link. |
+| `validate` | Every check possible without the network. Writes `<batch>_missing_files.csv` and `<batch>_missing_metadata.csv`. |
+| `reconcile` | Alias for `validate` — the generalized form of `check_files.zsh`. |
+| `plan` | Dry run: target, collection, datasets and file counts. Creates nothing. |
+| `deposit` | Create and upload datasets, recording a resumable manifest. Refuses an invalid inventory. |
+| `harvest` | Collect `filename → file DOI` for every dataset in the manifest. |
+| `status` | Print the config summary and the manifest. |
 
-### Batch working directories
+---
 
-| Path | Batch |
+## How scaffolding works
+
+The only file you prepare by hand:
+
+```csv
+filename,metadata_link
+plan_A19_001.tif,https://pi.lib.uchicago.edu/1001/org/ochre/aaa
+plan_A19_002.tif,https://pi.lib.uchicago.edu/1001/org/ochre/bbb
+plan_A19_003.tif,https://pi.lib.uchicago.edu/1001/org/ochre/ccc
+plan_A19_003.tif,https://pi.lib.uchicago.edu/1001/org/ochre/ddd
+```
+
+`scaffold` produces the full canonical table from it:
+
+| Column | Derived how |
 | --- | --- |
-| [illustrations/](illustrations/) | Illustrations subcollection. Datasets are arbitrary buckets of 500 files ("Dataset 55"…"Dataset 60"). Includes the metadata master, missing-file and missing-metadata reports, and the corrected `missing_illustrations_FIXED.csv` used as the inventory. |
-| [remaining_photos/](remaining_photos/) | Photo cleanup batch — files that failed earlier passes for three reasons: missing image, bad filename, missing/bad OCHRE link. Each has its own CSV; they get concatenated and de-duplicated on `filename`. |
-| [summer2026/](summer2026/) | Summer 2026 batch: fieldbooks, field reports, pottery registry & readings, material culture registry, videos, 2019+ photos. Source `.xlsx` from Box plus derived `metadata_*.csv`. [summer2026/upload_pids.json](summer2026/upload_pids.json) maps dataset title → assigned DOI. |
-| [legacy_data_and_scripts/](legacy_data_and_scripts/) | Everything from the 2012–2017 era of this project: the original notebooks (`messy_2012_script.ipynb`, `Publishing.ipynb`, `Troubleshooting.ipynb`), JSON metadata templates, and year-range masterlists. Reference only. |
+| `filename` | Enumerated from `files_dir`, filtered by `file_extensions` |
+| `file_description` | Raw link(s) wrapped in the project's HTML format |
+| `dataset_title` | The configured grouping strategy |
+| `dataset_description` | `dataset_description_template`, with `{key}` and `{title}` |
 
-### Outputs and reports (repo root)
+Three behaviours worth knowing:
 
-| File | Contents |
-| --- | --- |
-| `files_to_add.csv` | Assembled inventory for a deposit run (`filename`, `file_description`, `dataset_title`, `dataset_description`, `status`). |
-| `file_metadata.csv` | Output of `file_dois.zsh` for one dataset. |
-| `illustrations_dois.csv`, `illustrations_dois_v2.csv` | Harvested `filename → file DOI` for the illustrations datasets. |
-| `photos_dois_files.csv`, `photos_dois_datasets.csv` | Same for photographs, at file and dataset level. |
-| `summer2026/file_dois.csv` | Richer export: `filename, file_doi, dataset_name, dataset_doi, direct_download_link`. |
-| `missing_files.csv`, `missing_metadata.csv` | Reconciliation reports: rows with no file on disk, files on disk with no row. |
-| `errors.md` | Captured tracebacks from failed deposits (see [Known failure modes](#known-failure-modes)). |
-| `outline_2026.txt` | Batch checklist for Summer 2026 — source spreadsheet ↔ Box folder ↔ status, plus dataset DOIs. |
+- **Enumeration starts from disk, not from your CSV.** A file you forgot to list still gets a
+  row — flagged with an empty description — rather than silently vanishing from the deposit.
+  This is the failure mode behind every `missing_files` report in this repo's history.
+- **Repeated filenames collapse into one row.** Two rows for `plan_A19_003.tif` become a
+  single row using the `OCHRE link(s): <a…>; <a…>` format.
+- **Rows naming a file that isn't on disk are reported**, not silently carried forward.
+
+Column names vary across your source spreadsheets (`ochre_metadata`, `metadata`, `dataset`,
+`IDs ` with a trailing space). Map them in the config rather than editing spreadsheets:
+
+```yaml
+column_map:
+  ochre_metadata: metadata_link
+  dataset: dataset_title
+```
+
+Header whitespace and BOM markers are stripped unconditionally — both have caused silent
+lookup failures here before.
+
+### Grouping strategies
+
+| Strategy | Use | Config |
+| --- | --- | --- |
+| `by_column` | `dataset_title` already present | `column: dataset` |
+| `by_filename_regex` | Key encoded in the filename | `pattern: '^[A-Za-z](\d{2})_'` |
+| `by_chunk` | Fixed-size buckets | `size: 500` |
+
+A two-digit capture group is expanded to a four-digit year (`A99_` → 1999, `A12_` → 2012)
+using a configurable pivot, matching how the photograph batches were organised.
 
 ---
 
 ## The metadata contract
 
-Everything flows from a **file-level table**: one row per file to deposit. Dataset-level
-values are repeated on every row belonging to that dataset; grouping on `dataset_title`
-splits the table into datasets.
-
-Required columns:
+One row per file. Dataset-level values repeat across a dataset's rows.
 
 | Column | Meaning |
 | --- | --- |
-| `filename` | Filename as it exists on disk, including extension (lowercase the extension before deposit). |
-| `file_description` | Per-file description. In practice: the OCHRE permalink wrapped in an `<a href=…>` tag. |
-| `dataset_title` | Dataset this file belongs to — the grouping key. |
-| `dataset_description` | Dataset abstract; identical across all rows in a dataset. |
-| `prod_date` | *(optional)* Production date, used as `productionDate`. `curate.py` requires it; the notebook has it commented out. |
+| `filename` | As on disk, including extension |
+| `file_description` | Per-file description (the formatted OCHRE link) |
+| `dataset_title` | The grouping key |
+| `dataset_description` | Dataset abstract, identical within a dataset |
+| `prod_date` | *(optional)* Production date |
 
-Fields constant across the whole collection are set once at the top of the notebook rather
-than in the table: authors + affiliations, contact name/email, subject, keywords, language,
-funding agency, depositor, geographic coverage/unit, license.
+Collection-constant fields — authors, contact, subject, keywords, language, funding,
+depositor, geographic coverage — live in the config's `constants` block.
 
-Column naming is **not** consistent across batches yet — you will see `ochre_metadata`,
-`metadata`, `dataset`, `Dataset`, `IDs `(with a trailing space) in the raw CSVs, renamed to
-the canonical names partway through the notebook. Normalizing this is job one for the
-rewrite.
+### What validation catches
+
+Everything below is caught **before** the first network call:
+
+- Missing or misnamed required columns
+- Empty values in any required column
+- Duplicate filenames
+- `dataset_description` differing within a single dataset
+- `file_description` over 1000 chars or containing newlines — the
+  `Bean Validation constraints were violated` failure recorded in [errors.md](errors.md),
+  which otherwise surfaces only *after* files have uploaded
+- Rows whose file is absent from disk; files on disk absent from the table
+- Uppercase file extensions (warning)
 
 ---
 
-## Environment
+## Package layout
 
-Developed against a conda env named `curation` on Python 3.12.
-
-```bash
-conda create -n curation python=3.12
-conda activate curation
-pip install pandas numpy easyDataverse pyDataverse dvuploader httpx requests rich openpyxl jupyter
+```
+levy_curate/
+  config.py      Batch YAML + credentials from .env (token redacted in repr)
+  scaffold.py    files on disk + partial CSV -> complete metadata table
+  inventory.py   canonical schema, column mapping, validation, reconciliation
+  grouping.py    by_column | by_filename_regex | by_chunk
+  deposit.py     dataset metadata, easyDataverse upload, dry-run planning
+  manifest.py    append-only run log; resume support
+  harvest.py     file DOIs, MIME re-detection
+  cli.py         command line entry point
+configs/         one YAML per batch
+tests/           26 tests, no network required
+run_batch.ipynb  thin driver + QA surface
 ```
 
-`jq` is needed for `file_dois.zsh` (`brew install jq`).
+Everything above `deposit.py` is pure pandas and tested without a network.
 
-There is no `requirements.txt` / `environment.yml` yet — adding one is on the roadmap.
+```bash
+python -m pytest tests/ -q
+```
 
 ---
 
-## Running a batch
+## Resuming a failed deposit
 
-### 0. Setup
+The manifest is written *during* the loop, not after. If a batch dies partway, re-run
+`deposit` — datasets already marked uploaded are skipped:
 
-Set globals at the top of the notebook: `source_path`, `g_dataverse_inventory_file`
-(the metadata CSV), `datafiles_path` (directory holding the actual files),
-`dv_installation_url`, `dv_collection`, and the API token (→ move to env var).
+```
+resuming: 4 dataset(s) already uploaded, 2 to go
+```
 
-**The SSL patch cell.** The first cell monkey-patches `httpx.Client`,
-`httpx.AsyncClient`, `httpx.get`, and `requests.Session.request` to pass `verify=False`.
-This exists to get around HUIT's bot-traffic rate limiter and **only works while connected
-to the Harvard VPN**. It disables certificate verification process-wide — it is a workaround,
-not a practice to carry forward. Any rewrite should make this an explicit, documented,
-opt-in flag.
-
-Note that `dv_installation_url` sometimes points at the staging host
-(`https://dvn-cloud-app-2.lib.harvard.edu`) and sometimes at production
-(`https://dataverse.harvard.edu`). Check which one you're on before depositing.
-
-### 1. Assemble metadata
-
-Read the batch CSV(s), concatenate, drop duplicates on `filename`, derive the grouping key,
-rename columns to the canonical names, and wrap OCHRE links in `<a href>`.
-
-Photo batches derive `dataset_title` from the year encoded in the filename prefix
-(`A99_12624.jpg` → `1999`) via `convert_year` — a two-digit year ≤ 49 is 20xx, otherwise
-19xx. Illustration batches instead chunk into arbitrary buckets of 500 files.
-
-Then reconcile the table against the files on disk (`check_files.zsh`, or the in-notebook
-equivalent) so you know before uploading which rows have no file and which files have no row.
-
-### 2. Build dataset + datafile metadata, create datasets
-
-Split the inventory on `dataset_title` into `g_dataset_inventories`, build a metadata dict
-per dataset, instantiate an easyDataverse `Dataset` for each, and attach files with
-descriptions. Verify the total attached file count matches the inventory row count before
-depositing.
-
-### 3. Deposit
-
-Loop over datasets calling `dataset.upload(dataverse_name=dv_collection, n_parallel=2..3)`,
-**sleeping ~5 minutes between datasets** to stay under the rate limiter. Record the returned
-PIDs (this is what `summer2026/upload_pids.json` is).
-
-The loop is written as `list(dv_dataset_info.items())[N:]` so you can resume from dataset N
-after a failure — reset the slice to `[0:]` for a fresh run.
-
-Enable file DOIs on the collection first if the deposited files need their own DOIs.
-
-### 4. QA, then publish
-
-Manually review drafts in the Dataverse UI. Common post-deposit fixes handled in the
-notebook's troubleshooting section:
-
-- **Re-detect file types** — `POST /api/files/{id}/redetect` for files ingested with the wrong MIME type.
-- **Harvest file DOIs** — `GET /api/datasets/:persistentId/versions/:draft/files` and pull `dataFile.persistentId` into a CSV (also available as `file_dois.zsh`).
-- **Add stragglers** to an existing dataset by PID once missing files/links are resolved.
-
-Then publish.
+`manifest.pids()` returns `{dataset_title: pid}`, the successor to `upload_pids.json`.
 
 ---
 
 ## Known failure modes
 
-- **`Failed to register files: … Bean Validation constraints were violated … prePersist for
-  class FileMetadata`** (see [errors.md](errors.md)). Raised at the *registration* step after
-  files have already uploaded, so a retry may double-upload. Usually traceable to a bad field
-  in file metadata — most often an over-long or malformed `description`. Check the
-  description strings for the batch, and check for embedded commas/newlines that survived CSV
-  round-tripping.
-- **Rate limiting / connection resets** from HUIT. Mitigations in use: VPN, `verify=False`
-  patch, low `n_parallel`, 5-minute sleeps between datasets.
-- **Partial deposits.** If a batch dies mid-loop, the dataset exists as a draft with some
-  files. Resume via the list slice, and reconcile against the dataset's actual file list
-  before re-uploading.
-- **Filename ↔ metadata drift.** The single largest source of missing files. Filenames get
-  corrected on disk without the CSV being updated (or vice versa) — hence the recurring
-  `missing_files` / `missing_metadata` report pairs.
+- **Bean Validation error on file registration.** Raised *after* files upload, so a naive
+  retry can double-upload. Usually a malformed `file_description` — now caught by `validate`.
+- **HUIT rate limiting.** Mitigations: Harvard VPN, low `n_parallel`, `sleep_between_datasets`
+  (default 300s). `insecure_ssl: true` disables TLS verification process-wide as a last
+  resort; it announces itself loudly and is off by default.
+- **Wrong MIME types**, common with TIFFs and PDFs. Fix with `harvest.redetect(...)` rather
+  than re-uploading. Always dry-run first.
+- **Filename ↔ metadata drift.** Historically the largest source of missing files; now caught
+  at `validate` time instead of at upload time.
 
 ---
 
-## Toward a reusable pipeline
+## A data-quality note
 
-The current workflow is coupled to this collection in ways that block reuse: hard-coded
-absolute paths, a metadata schema that changes shape per batch, dataset-level fields frozen
-as notebook globals, credentials in source, and the logic living in a notebook that is edited
-in place for each run (so there's no record of what was actually run for a given batch).
+Auditing the existing batches turned up **five** different OCHRE link formats across roughly
+9,000 already-deposited files:
 
-A sketch of the target design:
+| Count | Prefix |
+| --- | --- |
+| 7,466 | `OCHRE link: ` |
+| 686 | `OCHRE link(s): ` |
+| 428 | `OCHRE Link: ` |
+| 405 | *(none — videos have no prefix)* |
+| 37 | `OCHRE Link:` |
 
-1. **Config, not code.** One `config.yaml` per batch: installation URL, collection, inventory
-   path, files path, and the collection-constant metadata (authors, contact, subject,
-   keywords, funding, license, geo). Credentials from the environment only.
-2. **A declared inventory schema.** Canonical column names with a validation step that runs
-   *before* any network call — checks required columns, non-empty values, one
-   `dataset_description` per `dataset_title`, and that every `filename` resolves on disk.
-   Per-batch column renaming becomes a declared mapping in the config, not notebook edits.
-3. **Pluggable grouping strategies.** `by_column`, `by_filename_regex` (the year extractor),
-   `by_chunk(n)` (the 500-file buckets) — the three strategies already in use here, named and
-   swappable.
-4. **`curate.py` as the single source of truth.** Import it from the notebook instead of
-   re-pasting the functions; drop `curate_py.txt`; add tests for the metadata builders using
-   small fixture CSVs (no network needed).
-5. **Idempotent, resumable deposits.** A run manifest (batch id, dataset title → PID, files
-   uploaded, timestamp, status) written incrementally, so a resume is "diff manifest against
-   the dataset's actual file list", not "edit a list slice". `upload_pids.json` is the
-   ancestor of this.
-6. **Reconciliation as a first-class command.** Generalize `check_files.zsh` into a Python
-   step that emits the missing-files/missing-metadata pair for any inventory + directory.
-7. **A thin CLI.** `validate`, `plan` (dry-run: datasets to create and their file counts),
-   `deposit`, `harvest-dois`, `reconcile` — with the notebook reduced to exploration and QA.
-8. **Separate data from code.** Bulk CSVs, `.xlsx`, and image directories move out of the
-   repo (or behind `.gitignore` + a documented external location); the repo holds code,
-   config, and small fixtures.
+An artifact of building these tables by hand. The scaffolder emits one consistent format, so
+this stops accumulating; the already-deposited descriptions would need a separate metadata
+update pass to normalize. The `metadata_pottery_all.csv` and `recent_photos.csv` formats are
+reproduced exactly by the scaffolder (verified against all 7,466 rows), so the templates in
+the config match established practice.
 
-Nothing above changes what gets deposited — it changes how much of a batch is retyped versus
-declared.
+Also noted: `dataset_description` for the material culture registry reads
+`"Matieral culture registry files…"` — a typo carried into the deposited metadata.
+
+---
+
+## Batch working directories
+
+| Path | Batch |
+| --- | --- |
+| [illustrations/](illustrations/) | Illustrations, in buckets of 500 |
+| [remaining_photos/](remaining_photos/) | Photo cleanup: missing images, bad filenames, bad links |
+| [summer2026/](summer2026/) | Fieldbooks, field reports, pottery, material culture, videos, 2019+ photos |
+| [legacy_data_and_scripts/](legacy_data_and_scripts/) | Pre-2025 notebooks and templates. Reference only |
+
+Deposit files themselves live in Box / OneDrive and are gitignored. Metadata CSVs and
+`upload_pids.json` are tracked as provenance.
+
+The pre-rewrite state is tagged **`v1.0-legacy`** if you need the original notebooks:
+
+```bash
+git show v1.0-legacy:levy_upload_script.ipynb > old_script.ipynb
+```
+
+---
+
+## Credentials
+
+Never in code, never in the config. `.env` only, gitignored, `chmod 600`. See
+[.env.example](.env.example).
+
+All API tokens previously committed to this repository have been revoked. `Credentials`
+redacts its token in `repr()` so it cannot surface in a notebook traceback.
+
+---
+
+## Legacy scripts
+
+[052025LeonLevy_curationScript.ipynb](052025LeonLevy_curationScript.ipynb) is the original
+end-to-end notebook, kept for reference and for troubleshooting cells not yet ported.
+[curate.py](curate.py) is superseded by `levy_curate/deposit.py`.
+[upload.py](upload.py) remains as a minimal single-dataset uploader.

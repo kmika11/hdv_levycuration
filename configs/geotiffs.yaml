@@ -1,0 +1,73 @@
+# Final batch: GeoTIFFs.
+#
+# Fill in files_dir and scaffold.partial, then:
+#   python -m levy_curate scaffold configs/geotiffs.yaml
+#   python -m levy_curate validate configs/geotiffs.yaml
+#   python -m levy_curate plan     configs/geotiffs.yaml
+#   python -m levy_curate deposit  configs/geotiffs.yaml
+
+name: geotiffs
+collection: ashkelonexcavations
+
+# Where the .tif files live. Not committed -- see .gitignore.
+files_dir: geotiffs/files
+
+# Written by `scaffold`, read by everything downstream.
+inventory: geotiffs/metadata_geotiffs.csv
+
+scaffold:
+  # The only file you prepare by hand: filename + raw OCHRE link per row.
+  # Repeat a filename on several rows to attach multiple links to one file.
+  partial: geotiffs/geotiffs_links.csv
+  link_column: metadata_link
+  link_separator: ";"
+  file_extensions: [tif, tiff]
+  output: geotiffs/metadata_geotiffs.csv
+
+  # Reproduces the formats already used across the collection.
+  description_template: 'OCHRE link: <a href="{url}">{url}</a>'
+  multi_description_template: 'OCHRE link(s): {links}'
+  link_item_template: '<a href="{url}">{url}</a>'
+
+  dataset_description_template: "Georeferenced site plans and maps from excavation: 1985-2016."
+
+# Rename incoming columns to the canonical schema. Add entries here rather
+# than editing the spreadsheet -- e.g. ochre_metadata: metadata_link
+column_map: {}
+
+# All GeoTIFFs into one dataset. Alternatives:
+#   by_filename_regex  pattern: '^[A-Za-z](\d{2})_'   (year from filename)
+#   by_chunk           size: 500                       (fixed-size buckets)
+grouping:
+  strategy: by_chunk
+  size: 10000
+  title_template: "Leon Levy Expedition to Ashkelon Dataset: Georeferenced Imagery"
+
+license: "CC BY-NC-ND 4.0"
+
+# Set true only on the Harvard VPN; disables TLS verification process-wide.
+insecure_ssl: false
+
+n_parallel: 2
+sleep_between_datasets: 300
+
+manifest: manifests/geotiffs.json
+
+# Constant across every dataset in this collection.
+constants:
+  authors:
+    - name: "Master, Daniel M."
+      affiliation: "Wheaton College"
+    - name: "Stager, Lawrence E."
+      affiliation: "Harvard University"
+  contact:
+    name: "Master, Daniel M."
+    email: "daniel.master@wheaton.edu"
+  subject: "Arts and Humanities"
+  keywords: "Archaeology"
+  language: "English"
+  funding: "The Leon Levy Foundation"
+  depositor: "Mika, Katherine"
+  geo:
+    coverage: "Ashkelon"
+    unit: "City"
