@@ -1,0 +1,10 @@
+{
+    "fields":[
+       {
+          "typeName":"originOfSources",
+          "multiple":false,
+          "typeClass":"primitive",
+          "value":"Israel"
+       }
+    ]
+ }

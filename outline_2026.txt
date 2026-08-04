@@ -1,0 +1,25 @@
+List of metadata files and links to box folders for Summer 2026 batches
+DONE 1. (Field Notebooks) Fieldbook metadata including those with multiple OCHRE Links.xslx = https://wheaton.app.box.com/s/8b0mxlu108vszf8yps0yq2crixyjnsi5
+DONE 2. (Field Notebooks) Field Reports and Persistent OCHRE links.xslx = https://wheaton.app.box.com/s/06sfs8umfw37gtxi8ux15xl8osk333ur 
+DONE 3. (Pottery) Pottery Readings with OCHRE links.xslx = https://wheaton.app.box.com/s/2qm75x63jf2o42kokm9bymxuoi1nj8p3/folder/127361298337 
+DONE 4. (Pottery) Pottery Registry files with OCHRE links.xslx = https://wheaton.app.box.com/s/lbvsf06d5qgn070bpe7kaso4qp2qijon 
+DONE 5. Material Culture Registry and Persistent OCHRE Links.xslx = https://wheaton.app.box.com/s/ftqv8ehgm7qte5qaxapk19xl8z1i1ygb/folder/127361768558 
+DONE 6. Video Metadata with missing files in Red.xslx = https://wheaton.app.box.com/s/37mydmm3i0ldendypqmfghowe0c96dv2 
+DONE 7. (Create datasets by year) 2019 and Later Photos.xslx = https://wheaton.app.box.com/s/24ef5klu62c1fzcvwczepeapk9q6skuh 
+
+Ask about collection locations
+Collect file DOIs for datasets: 
+  "2019 Photographs": "doi:10.7910/DVN/GC7VPA",
+  "2022 Photographs": "doi:10.7910/DVN/I61NUB",
+  "Leon Levy Expedition to Ashkelon Dataset: Videos": "doi:10.7910/DVN/PUPH8R",
+  "Pottery Registry: Dataset 1": "doi:10.7910/DVN/AIZG6H",
+  "Pottery Readings: Dataset 2": "doi:10.7910/DVN/LPMXIY",
+  "Pottery Readings: Dataset 3": "doi:10.7910/DVN/FQ4IV2",
+  "Pottery Readings: Dataset 4": "doi:10.7910/DVN/GGMWB6",
+  "Pottery Readings: Dataset 5": "doi:10.7910/DVN/T5LVID",
+  "Pottery Readings: Dataset 6": "doi:10.7910/DVN/KKNVNP",
+  "Pottery Registry: Dataset 2": "doi:10.7910/DVN/WHN3EV",
+  "Pottery Readings: Dataset 1": "doi:10.7910/DVN/2DRF2T",
+  "Leon Levy Expedition to Ashkelon Dataset: Fieldbooks": "doi:10.7910/DVN/MV7O1B",
+  "Leon Levy Expedition to Ashkelon Dataset: Material Culture Registry": "doi:10.7910/DVN/OD9HLS",
+  "Leon Levy Expedition to Ashkelon Dataset: Field Reports": "doi:10.7910/DVN/OSFQA7"
