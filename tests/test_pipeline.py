@@ -344,6 +344,88 @@ def test_manifest_survives_partial_run(tmp_path):
     assert json.loads(path.read_text())["datasets"]["D1"]["status"] == "in_progress"
 
 
+@pytest.fixture
+def isolated_env(monkeypatch):
+    """Stop the real .env from overriding values set by a test.
+
+    from_yaml() calls load_dotenv(override=True) on purpose -- the file is
+    authoritative so a stale shell export cannot redirect a run. That makes the
+    real .env leak into tests, so it is neutralised here.
+    """
+    monkeypatch.setattr("levy_curate.config.load_dotenv", lambda *a, **kw: None)
+
+
+def test_machine_settings_fall_back_to_env(tmp_path, monkeypatch, isolated_env):
+    """A committed config omits per-machine settings; .env supplies them."""
+    monkeypatch.setenv("DATAVERSE_INSECURE_SSL", "true")
+    monkeypatch.setenv("DATAVERSE_N_PARALLEL", "5")
+    monkeypatch.setenv("DATAVERSE_SLEEP_BETWEEN_DATASETS", "60")
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert cfg.insecure_ssl is True
+    assert cfg.n_parallel == 5
+    assert cfg.sleep_between_datasets == 60
+
+
+def test_config_overrides_env_for_machine_settings(tmp_path, monkeypatch, isolated_env):
+    """An explicit key in the batch YAML still wins."""
+    monkeypatch.setenv("DATAVERSE_INSECURE_SSL", "true")
+    monkeypatch.setenv("DATAVERSE_N_PARALLEL", "5")
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"], insecure_ssl=False, n_parallel=1)
+    assert cfg.insecure_ssl is False
+    assert cfg.n_parallel == 1
+
+
+def test_machine_settings_default_when_absent_everywhere(tmp_path, monkeypatch, isolated_env):
+    monkeypatch.delenv("DATAVERSE_INSECURE_SSL", raising=False)
+    monkeypatch.delenv("DATAVERSE_N_PARALLEL", raising=False)
+    monkeypatch.delenv("DATAVERSE_SLEEP_BETWEEN_DATASETS", raising=False)
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert cfg.insecure_ssl is False        # never insecure by default
+    assert cfg.n_parallel == 2
+    assert cfg.sleep_between_datasets == 300
+
+
+def test_bad_env_integer_fails_loudly(tmp_path, monkeypatch, isolated_env):
+    monkeypatch.setenv("DATAVERSE_N_PARALLEL", "lots")
+    with pytest.raises(ValueError, match="must be an integer"):
+        make_batch(tmp_path, filenames=["a.tif"])
+
+
+def test_insecure_ssl_only_true_for_explicit_truthy_values(monkeypatch):
+    from levy_curate.config import _env_flag
+
+    for truthy in ("true", "True", "1", "yes", "on"):
+        monkeypatch.setenv("X", truthy)
+        assert _env_flag("X") is True
+    for falsy in ("false", "0", "no", "off", "", "maybe"):
+        monkeypatch.setenv("X", falsy)
+        assert _env_flag("X") is False
+
+
+def test_shipped_template_is_loadable_and_generic():
+    """The template must parse, and must not carry project-specific values."""
+    import pathlib
+
+    from levy_curate.config import BatchConfig
+
+    path = pathlib.Path(__file__).parent.parent / "configs" / "template.yaml"
+    cfg = BatchConfig.from_yaml(path)
+
+    assert cfg.grouping.strategy in ("by_column", "by_filename_regex", "by_chunk")
+    assert cfg.constants["authors"], "template should show an author example"
+
+    # Allowed: "harvard" (a DATAVERSE_TARGET value) and "levy_curate" (the
+    # package name). Project-specific *values* are not.
+    text = path.read_text().lower().replace("levy_curate", "")
+    for leaked in (
+        "ashkelon", "wheaton", "uchicago", "leon levy", "pierce", "master, daniel",
+    ):
+        assert leaked not in text, f"template leaks project-specific value: {leaked}"
+
+
 def test_manifest_path_is_scoped_to_target(tmp_path):
     """A demo run and a production run must never share a manifest."""
     cfg = make_batch(tmp_path, filenames=["a.tif"], manifest="manifests/geotiffs.json")

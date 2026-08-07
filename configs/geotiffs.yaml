@@ -52,11 +52,11 @@ grouping:
 
 license: "CC BY-NC-ND 4.0"
 
-# Set true only on the Harvard VPN; disables TLS verification process-wide.
-insecure_ssl: true
-
-n_parallel: 2
-sleep_between_datasets: 300
+# insecure_ssl / n_parallel / sleep_between_datasets are intentionally omitted.
+# They describe your machine and network, not this batch, so they live in .env
+# (DATAVERSE_INSECURE_SSL, DATAVERSE_N_PARALLEL,
+# DATAVERSE_SLEEP_BETWEEN_DATASETS). Add a key here only to override for this
+# batch specifically.
 
 manifest: manifests/geotiffs.json
 

@@ -9,9 +9,31 @@ You supply the files and a CSV with one filename and one OCHRE link per row. The
 builds the complete metadata table, validates it against the files on disk, creates the
 datasets, uploads them with a resumable manifest, and harvests file DOIs afterward.
 
-**Design principle:** what varies per batch lives in a YAML config; what varies per
-installation lives in `.env`; the code stays fixed. A new collection should be a new config
-file, not a new notebook.
+**Design principle:** what varies per batch lives in a YAML config; what varies per machine
+lives in `.env`; the code stays fixed. A new collection should be a new config file, not a
+new notebook.
+
+| Layer | Holds | Committed? |
+| --- | --- | --- |
+| `.env` | API tokens, target installation, VPN/TLS and concurrency settings | **Never** |
+| `configs/<batch>.yaml` | Files, grouping, descriptions, authors, licence | Yes |
+| `levy_curate/` | The pipeline itself | Yes |
+
+Machine-specific settings — `insecure_ssl`, `n_parallel`, `sleep_between_datasets` — are
+deliberately absent from the committed configs and read from `.env` instead, so a config
+stays portable. A batch config may still set them explicitly to override.
+
+### Starting a new batch
+
+[configs/template.yaml](configs/template.yaml) is a fully commented, project-agnostic
+starting point:
+
+```bash
+cp configs/template.yaml configs/mybatch.yaml
+```
+
+[configs/geotiffs.yaml](configs/geotiffs.yaml) is a real working config, useful as a
+reference for what a filled-in version looks like.
 
 ---
 
@@ -177,8 +199,8 @@ levy_curate/
   manifest.py    append-only run log; resume support
   harvest.py     file DOIs, MIME re-detection
   cli.py         command line entry point
-configs/         one YAML per batch
-tests/           38 tests, no network required
+configs/         template.yaml + one YAML per batch
+tests/           44 tests, no network required
 run_batch.ipynb  thin driver + QA surface
 ```
 

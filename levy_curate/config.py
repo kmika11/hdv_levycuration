@@ -17,6 +17,23 @@ from dotenv import find_dotenv, load_dotenv
 VALID_TARGETS = ("demo", "harvard")
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from None
+
+
 @dataclass(frozen=True)
 class Credentials:
     """A Dataverse installation URL and API token."""
@@ -136,7 +153,18 @@ class BatchConfig:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "BatchConfig":
-        """Load a batch config. Paths inside it resolve relative to the repo root."""
+        """Load a batch config. Paths inside it resolve relative to the repo root.
+
+        Machine-specific settings (insecure_ssl, n_parallel,
+        sleep_between_datasets) fall back to .env when the YAML omits them, so a
+        committed config stays portable. Precedence, highest first:
+
+            1. the key in this YAML file
+            2. .env
+            3. the built-in default
+        """
+        load_dotenv(find_dotenv(), override=True)
+
         path = Path(path).expanduser().resolve()
         with open(path) as fh:
             raw = yaml.safe_load(fh) or {}
@@ -166,9 +194,21 @@ class BatchConfig:
             constants=raw.get("constants") or {},
             column_map=raw.get("column_map") or {},
             license=raw.get("license", "CC BY-NC-ND 4.0"),
-            insecure_ssl=bool(raw.get("insecure_ssl", False)),
-            n_parallel=int(raw.get("n_parallel", 2)),
-            sleep_between_datasets=int(raw.get("sleep_between_datasets", 300)),
+            insecure_ssl=(
+                bool(raw["insecure_ssl"])
+                if "insecure_ssl" in raw
+                else _env_flag("DATAVERSE_INSECURE_SSL")
+            ),
+            n_parallel=(
+                int(raw["n_parallel"])
+                if "n_parallel" in raw
+                else _env_int("DATAVERSE_N_PARALLEL", 2)
+            ),
+            sleep_between_datasets=(
+                int(raw["sleep_between_datasets"])
+                if "sleep_between_datasets" in raw
+                else _env_int("DATAVERSE_SLEEP_BETWEEN_DATASETS", 300)
+            ),
             manifest=_p(raw.get("manifest"), "manifests/run.json"),
             root=root,
             target=raw.get("target"),
