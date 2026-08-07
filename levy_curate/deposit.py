@@ -46,10 +46,44 @@ def disable_ssl_verification() -> None:
     httpx.AsyncClient = InsecureAsyncClient
     httpx.get = lambda *a, **kw: _get(*a, **{**kw, "verify": False})
 
+    # Callers pass method/url positionally *or* by keyword -- requests.api.post
+    # uses keywords -- so forward *args untouched rather than naming them.
     _request = requests.Session.request
-    requests.Session.request = lambda self, m, u, **kw: _request(
-        self, m, u, **{**kw, "verify": False}
-    )
+
+    def insecure_request(self, *args, **kwargs):
+        kwargs["verify"] = False
+        return _request(self, *args, **kwargs)
+
+    requests.Session.request = insecure_request
+
+    if not _patch_is_sane():
+        raise RuntimeError(
+            "SSL patch failed self-check; refusing to continue. "
+            "Set insecure_ssl false (or DATAVERSE_INSECURE_SSL=false) and retry."
+        )
+
+
+def _patch_is_sane() -> bool:
+    """Confirm the patched request signature accepts both call styles.
+
+    The patch sits in front of every upload; a signature mistake here surfaces
+    only mid-deposit, so it is checked up front against a request that is never
+    sent.
+    """
+    import requests
+
+    session = requests.Session()
+    for args, kwargs in (
+        (("GET", "https://example.invalid"), {}),          # positional
+        ((), {"method": "GET", "url": "https://example.invalid"}),  # keyword
+    ):
+        try:
+            session.request(*args, **kwargs)
+        except TypeError:
+            return False
+        except Exception:
+            pass  # any transport error means the call signature was fine
+    return True
 
 
 def build_dataset_metadata(rows: pd.DataFrame, cfg: BatchConfig) -> dict[str, Any]:

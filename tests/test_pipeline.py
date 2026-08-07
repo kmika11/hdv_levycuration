@@ -523,6 +523,53 @@ def test_author_identifier_scheme_can_be_overridden(tmp_path):
     assert author["authorIdentifierScheme"] == "ROR"
 
 
+def test_ssl_patch_accepts_positional_and_keyword_calls(monkeypatch):
+    """Regression: requests.api.post calls session.request(method=, url=).
+
+    The original patch declared method/url positionally, so every deposit with
+    insecure_ssl enabled died with a TypeError at dataset creation.
+    """
+    import requests
+
+    from levy_curate import deposit as dep
+
+    original = requests.Session.request
+    calls = []
+
+    def fake(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return "ok"
+
+    monkeypatch.setattr(requests.Session, "request", fake)
+    monkeypatch.setattr(dep, "_patch_is_sane", lambda: True)
+    dep.disable_ssl_verification()
+
+    session = requests.Session()
+    assert session.request("POST", "https://example.invalid") == "ok"
+    assert session.request(method="POST", url="https://example.invalid") == "ok"
+
+    assert len(calls) == 2
+    assert all(kw.get("verify") is False for _, kw in calls), "verify=False not applied"
+
+    requests.Session.request = original
+
+
+def test_ssl_patch_self_check_catches_a_broken_signature(monkeypatch):
+    """A bad patch must fail before the deposit, not during it."""
+    import requests
+
+    from levy_curate import deposit as dep
+
+    original = requests.Session.request
+    monkeypatch.setattr(
+        requests.Session, "request", lambda self, m, u, **kw: None  # positional-only
+    )
+    try:
+        assert dep._patch_is_sane() is False
+    finally:
+        requests.Session.request = original
+
+
 class _FakeDataset:
     """Stands in for an easyDataverse Dataset that has been uploaded."""
 
