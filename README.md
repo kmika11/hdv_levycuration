@@ -37,6 +37,10 @@ troubleshooting cells alongside.
 untested run cannot write to production. Depositing to Harvard from the CLI additionally
 requires typing the batch name to confirm.
 
+> **Depositing to Harvard? Two things first:** connect to the **Harvard VPN**, and make sure
+> **file DOIs are enabled** on the target collection. See
+> [Before depositing to Harvard Dataverse](#before-depositing-to-harvard-dataverse).
+
 ---
 
 ## Commands
@@ -174,7 +178,7 @@ levy_curate/
   harvest.py     file DOIs, MIME re-detection
   cli.py         command line entry point
 configs/         one YAML per batch
-tests/           26 tests, no network required
+tests/           38 tests, no network required
 run_batch.ipynb  thin driver + QA surface
 ```
 
@@ -200,6 +204,45 @@ redirect a deposit to production, so the file is authoritative. Only `--target` 
 
 Depositing to Harvard requires typing the batch name to confirm. Every command prints its
 resolved target — check that line before proceeding.
+
+### Before depositing to Harvard Dataverse
+
+> ### ⚠️ Connect to the Harvard VPN first
+>
+> Off-VPN, HUIT's bot-traffic rate limiter throttles and drops bulk uploads. Failures land
+> mid-batch, often *after* files have been transferred, leaving partial drafts to reconcile.
+>
+> `insecure_ssl: true` in the batch config **only works on the VPN**. Off-VPN it disables
+> certificate verification for the whole process and gains you nothing.
+
+**Enable file DOIs on the collection before the first deposit.** Each collection *and each
+subcollection* is configured separately, and the setting is not inherited from the parent.
+If a batch deposits into a collection you haven't used before, check it first.
+
+This cannot be applied retroactively: files deposited before the setting is enabled do not
+get DOIs, and fixing it means re-depositing them. `harvest` will return empty
+`file_doi` values, which is the symptom to watch for.
+
+**Enabling it is a support request, not something you can set yourself.** The admin
+endpoints (`/api/admin/settings/:FilePIDsEnabled`,
+`/api/admin/dataverse/<alias>/filePIDsEnabled`) are superuser-only and return `403` with a
+normal account — verified against demo. Ask Harvard Dataverse support to enable file-level
+PIDs on the specific collection or subcollection you are depositing into.
+
+**To check whether a collection already mints file DOIs**, look at any dataset already in it:
+
+```bash
+source .env
+curl -s -H "X-Dataverse-key: $DATAVERSE_API_TOKEN" \
+  "$DATAVERSE_URL/api/datasets/:persistentId/versions/:latest/files?persistentId=<some-doi-in-that-collection>" \
+  | jq -r '[.data[].dataFile.persistentId] | "with file DOI: \(map(select(.!=""))|length) / \(length)"'
+```
+
+`with file DOI: 129 / 129` means it is on. `0 / 129` means it is not, and anything deposited
+so far has no file DOIs.
+
+If a collection is new and empty, deposit one small dataset first and run that check before
+committing the full batch.
 
 ---
 
@@ -240,6 +283,9 @@ trust a report contradicted by the API.
 
 - **Bean Validation error on file registration.** Raised *after* files upload, so a naive
   retry can double-upload. Usually a malformed `file_description` — now caught by `validate`.
+- **Empty `file_doi` values after `harvest`.** File DOIs were not enabled on that collection
+  when the batch was deposited. Not fixable retroactively — see
+  [Before depositing to Harvard Dataverse](#before-depositing-to-harvard-dataverse).
 - **HUIT rate limiting.** Mitigations: Harvard VPN, low `n_parallel`, `sleep_between_datasets`
   (default 300s). `insecure_ssl: true` disables TLS verification process-wide as a last
   resort; it announces itself loudly and is off by default.

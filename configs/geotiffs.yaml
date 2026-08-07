@@ -53,7 +53,7 @@ grouping:
 license: "CC BY-NC-ND 4.0"
 
 # Set true only on the Harvard VPN; disables TLS verification process-wide.
-insecure_ssl: false
+insecure_ssl: true
 
 n_parallel: 2
 sleep_between_datasets: 300
