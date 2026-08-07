@@ -588,20 +588,61 @@ def test_verify_upload_confirms_files_that_actually_landed(tmp_path, monkeypatch
     assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) == "doi:10.5072/X"
 
 
+def test_verify_upload_waits_for_registration_to_finish(tmp_path, monkeypatch):
+    """The 504 case: registration completes after the gateway times out.
+
+    Checking once sees a partial count and wrongly reports failure -- this is
+    what happened on the first production deposit of the GeoTIFF batch.
+    """
+    from levy_curate import deposit as dep
+
+    counts = iter([40, 96, 129])  # server still registering, then done
+    monkeypatch.setattr(
+        "levy_curate.harvest.dataset_files",
+        lambda pid, creds, version=":draft": [{}] * next(counts),
+    )
+    monkeypatch.setattr(dep.time, "sleep", lambda s: None)
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    result = dep.verify_upload(
+        _FakeDataset("doi:10.5072/X"), 129, cfg.credentials, on_progress=lambda m: None
+    )
+    assert result == "doi:10.5072/X"
+
+
+def test_verify_upload_gives_up_if_registration_never_completes(tmp_path, monkeypatch):
+    from levy_curate import deposit as dep
+
+    monkeypatch.setattr(
+        "levy_curate.harvest.dataset_files", lambda pid, creds, version=":draft": [{}] * 40
+    )
+    monkeypatch.setattr(dep.time, "sleep", lambda s: None)
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert dep.verify_upload(
+        _FakeDataset("doi:10.5072/X"), 129, cfg.credentials,
+        attempts=3, on_progress=lambda m: None,
+    ) is None
+
+
 def test_verify_upload_rejects_a_partial_upload(tmp_path, monkeypatch):
     from levy_curate import deposit as dep
 
     monkeypatch.setattr(
         "levy_curate.harvest.dataset_files", lambda pid, creds, version=":draft": [{}] * 40
     )
+    monkeypatch.setattr(dep.time, "sleep", lambda s: None)
     cfg = make_batch(tmp_path, filenames=["a.tif"])
-    assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) is None
+    assert dep.verify_upload(
+        _FakeDataset("doi:10.5072/X"), 129, cfg.credentials, on_progress=lambda m: None
+    ) is None
 
 
 def test_verify_upload_is_conservative_when_it_cannot_check(tmp_path, monkeypatch):
     """No PID, or an unreachable API, must never be read as success."""
     from levy_curate import deposit as dep
 
+    monkeypatch.setattr(dep.time, "sleep", lambda s: None)
     cfg = make_batch(tmp_path, filenames=["a.tif"])
     assert dep.verify_upload(_FakeDataset(None), 129, cfg.credentials) is None
 
@@ -609,7 +650,9 @@ def test_verify_upload_is_conservative_when_it_cannot_check(tmp_path, monkeypatc
         raise ConnectionError("unreachable")
 
     monkeypatch.setattr("levy_curate.harvest.dataset_files", boom)
-    assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) is None
+    assert dep.verify_upload(
+        _FakeDataset("doi:10.5072/X"), 129, cfg.credentials, on_progress=lambda m: None
+    ) is None
 
 
 def test_plan_is_read_only_and_lists_datasets(tmp_path):

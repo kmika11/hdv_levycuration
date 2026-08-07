@@ -226,25 +226,51 @@ def attach_files(ds, rows: pd.DataFrame, files_dir: Path):
     return ds
 
 
-def verify_upload(ds, expected: int, creds) -> str | None:
+def verify_upload(
+    ds,
+    expected: int,
+    creds,
+    attempts: int = 6,
+    delay: int = 15,
+    on_progress: Callable[[str], None] = print,
+) -> str | None:
     """Did this dataset actually land, despite an error being raised?
 
-    Returns its PID when the dataset exists and holds exactly `expected` files,
-    otherwise None. Any problem reaching the API is treated as "not verified",
-    so an ambiguous case is still recorded as a failure.
+    Returns its PID when the dataset holds exactly `expected` files, else None.
+
+    Polls rather than checking once. A 504 at file registration means the
+    gateway gave up waiting, not that the server stopped -- registration
+    routinely completes seconds to minutes later. Checking immediately sees a
+    partial count and wrongly concludes failure, which is what happened on the
+    first production run of this batch.
+
+    Any problem reaching the API is treated as "not verified", so an ambiguous
+    case is still recorded as a failure.
     """
     pid = getattr(ds, "p_id", None)
     if not pid:
         return None
 
-    try:
-        from .harvest import dataset_files
+    from .harvest import dataset_files
 
-        actual = len(dataset_files(pid, creds))
-    except Exception:
-        return None
+    for attempt in range(attempts):
+        try:
+            actual = len(dataset_files(pid, creds))
+            if actual == expected:
+                return pid
+            status = f"{actual}/{expected} files registered"
+        except Exception as exc:
+            status = f"could not read dataset ({type(exc).__name__})"
 
-    return pid if actual == expected else None
+        if attempt < attempts - 1:
+            on_progress(
+                f"    verifying {pid}: {status}; server may still be "
+                f"registering, retrying in {delay}s "
+                f"({attempt + 1}/{attempts - 1})"
+            )
+            time.sleep(delay)
+
+    return None
 
 
 def plan(df: pd.DataFrame, cfg: BatchConfig) -> str:
@@ -324,7 +350,7 @@ def deposit(
             # landed -- the 500-at-registration case in errors.md. Believing
             # the exception leads to a retry that uploads everything twice, so
             # check what really exists before recording a failure.
-            landed = verify_upload(ds, len(rows), creds)
+            landed = verify_upload(ds, len(rows), creds, on_progress=on_progress)
             if landed:
                 man.succeeded(title, landed, len(rows))
                 on_progress(
