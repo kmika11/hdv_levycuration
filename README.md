@@ -55,15 +55,25 @@ requires typing the batch name to confirm.
 
 ## How scaffolding works
 
-The only file you prepare by hand:
+The only file you prepare by hand — a filename and an OCHRE identifier per row:
 
 ```csv
-filename,metadata_link
-plan_A19_001.tif,https://pi.lib.uchicago.edu/1001/org/ochre/aaa
-plan_A19_002.tif,https://pi.lib.uchicago.edu/1001/org/ochre/bbb
-plan_A19_003.tif,https://pi.lib.uchicago.edu/1001/org/ochre/ccc
-plan_A19_003.tif,https://pi.lib.uchicago.edu/1001/org/ochre/ddd
+File,UUID
+plan_A19_001.tif,5e664bee-2311-4ce1-a997-ae0e31188c81
+plan_A19_002.tif,ee0676fd-33f3-45d3-8a83-31bb7fb3b2e3
+plan_A19_003.tif,c05bdf23-a25b-444e-ae62-a77e25407009
+plan_A19_003.tif,08833618-49ea-4eb6-9ea0-46f16d572606
 ```
+
+Bare UUIDs are expanded into full persistent links by `link_url_template`:
+
+```yaml
+scaffold:
+  link_url_template: "https://pi.lib.uchicago.edu/1001/org/ochre/{value}"
+```
+
+Values that are already URLs pass through untouched, so a column mixing UUIDs and full
+links resolves correctly either way.
 
 `scaffold` produces the full canonical table from it:
 
@@ -122,6 +132,18 @@ One row per file. Dataset-level values repeat across a dataset's rows.
 
 Collection-constant fields — authors, contact, subject, keywords, language, funding,
 depositor, geographic coverage — live in the config's `constants` block.
+
+Authors may carry a persistent identifier. `orcid:` is the shorthand; use
+`identifier:` + `identifier_scheme:` for ROR, ISNI, VIAF and the rest of Dataverse's
+vocabulary:
+
+```yaml
+constants:
+  authors:
+    - name: "Pierce, George"
+      affiliation: "Brigham Young University"
+      orcid: "0000-0002-8332-8495"
+```
 
 ### What validation catches
 

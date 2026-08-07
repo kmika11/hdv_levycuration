@@ -170,6 +170,45 @@ def test_scaffold_writes_canonical_columns_first(tmp_path):
     assert result.output_path.exists()
 
 
+def test_scaffold_expands_bare_uuids_into_urls(tmp_path):
+    """The GeoTIFF batch supplies OCHRE UUIDs, not links."""
+    uuid = "5e664bee-2311-4ce1-a997-ae0e31188c81"
+    cfg = make_batch(
+        tmp_path,
+        filenames=["a.tif"],
+        partial_rows=[{"filename": "a.tif", "metadata_link": uuid}],
+        scaffold={"link_url_template": f"{OCHRE}/{{value}}"},
+    )
+    result = scaffold.build(cfg)
+    assert result.table.loc[0, "file_description"] == (
+        f'OCHRE link: <a href="{OCHRE}/{uuid}">{OCHRE}/{uuid}</a>'
+    )
+
+
+def test_scaffold_leaves_full_urls_untouched(tmp_path):
+    """A column mixing UUIDs and URLs must resolve correctly either way."""
+    cfg = make_batch(
+        tmp_path,
+        filenames=["a.tif", "b.tif"],
+        partial_rows=[
+            {"filename": "a.tif", "metadata_link": "abc-123"},
+            {"filename": "b.tif", "metadata_link": f"{OCHRE}/already-a-url"},
+        ],
+        scaffold={"link_url_template": f"{OCHRE}/{{value}}"},
+    )
+    table = scaffold.build(cfg).table.set_index("filename")
+    assert f'href="{OCHRE}/abc-123"' in table.loc["a.tif", "file_description"]
+    assert f'href="{OCHRE}/already-a-url"' in table.loc["b.tif", "file_description"]
+    assert table.loc["b.tif", "file_description"].count(OCHRE) == 2  # not double-prefixed
+
+
+def test_expand_url_is_case_insensitive_about_scheme():
+    from levy_curate.scaffold import expand_url
+
+    assert expand_url("HTTPS://example.org/x", "pre/{value}") == "HTTPS://example.org/x"
+    assert expand_url("bare", "pre/{value}") == "pre/bare"
+
+
 # ---------------------------------------------------------------- grouping
 
 
@@ -319,6 +358,52 @@ def test_build_dataset_metadata_maps_constants(tmp_path):
     assert meta["keywords"] == [{"keywordValue": "Archaeology"}, {"keywordValue": "Ashkelon"}]
     assert meta["geographicCoverage"] == "Ashkelon"
     assert meta["license"] == "CC BY-NC-ND 4.0"
+
+
+def test_author_orcid_flows_into_metadata(tmp_path):
+    from levy_curate.deposit import build_dataset_metadata
+
+    cfg = make_batch(
+        tmp_path,
+        filenames=["a.tif", "b.tif"],
+        constants={
+            "authors": [
+                {
+                    "name": "Pierce, George",
+                    "affiliation": "Brigham Young University",
+                    "orcid": "0000-0002-8332-8495",
+                }
+            ]
+        },
+    )
+    author = build_dataset_metadata(_valid_frame(), cfg)["author"][0]
+    assert author["authorIdentifier"] == "0000-0002-8332-8495"
+    assert author["authorIdentifierScheme"] == "ORCID"
+
+
+def test_author_without_orcid_carries_no_identifier(tmp_path):
+    from levy_curate.deposit import build_dataset_metadata
+
+    cfg = make_batch(tmp_path, filenames=["a.tif", "b.tif"])
+    author = build_dataset_metadata(_valid_frame(), cfg)["author"][0]
+    assert author["authorIdentifier"] is None
+    assert author["authorIdentifierScheme"] is None
+
+
+def test_author_identifier_scheme_can_be_overridden(tmp_path):
+    from levy_curate.deposit import build_dataset_metadata
+
+    cfg = make_batch(
+        tmp_path,
+        filenames=["a.tif", "b.tif"],
+        constants={
+            "authors": [
+                {"name": "X", "identifier": "https://ror.org/abc", "identifier_scheme": "ROR"}
+            ]
+        },
+    )
+    author = build_dataset_metadata(_valid_frame(), cfg)["author"][0]
+    assert author["authorIdentifierScheme"] == "ROR"
 
 
 def test_plan_is_read_only_and_lists_datasets(tmp_path):

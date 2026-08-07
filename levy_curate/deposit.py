@@ -68,7 +68,18 @@ def build_dataset_metadata(rows: pd.DataFrame, cfg: BatchConfig) -> dict[str, An
         "title": rows.at[first, "dataset_title"],
         "description": [{"dsDescriptionValue": rows.at[first, "dataset_description"]}],
         "author": [
-            {"authorName": a["name"], "authorAffiliation": a.get("affiliation", "")}
+            {
+                "authorName": a["name"],
+                "authorAffiliation": a.get("affiliation", ""),
+                # An author may carry a persistent identifier. ORCID is assumed
+                # when a bare `orcid:` key is given; `identifier_scheme` allows
+                # ROR, ISNI, VIAF and the rest of Dataverse's vocabulary.
+                "authorIdentifier": a.get("orcid") or a.get("identifier"),
+                "authorIdentifierScheme": (
+                    a.get("identifier_scheme", "ORCID") if (a.get("orcid") or a.get("identifier"))
+                    else None
+                ),
+            }
             for a in c.get("authors", [])
         ],
         "contact": [
@@ -102,7 +113,11 @@ def populate_dataset(ds, meta: dict[str, Any]):
     ds.citation.title = meta["title"]
 
     for a in meta.get("author", []):
-        ds.citation.add_author(name=a["authorName"], affiliation=a["authorAffiliation"])
+        kwargs = {"name": a["authorName"], "affiliation": a["authorAffiliation"]}
+        if a.get("authorIdentifier"):
+            kwargs["identifier"] = a["authorIdentifier"]
+            kwargs["identifier_scheme"] = a.get("authorIdentifierScheme", "ORCID")
+        ds.citation.add_author(**kwargs)
 
     for d in meta.get("description", []):
         ds.citation.add_ds_description(value=d["dsDescriptionValue"])
@@ -127,12 +142,44 @@ def populate_dataset(ds, meta: dict[str, Any]):
     if meta.get("productionDate"):
         ds.citation.production_date = str(meta["productionDate"])
 
+    # Installations disagree on the geospatial field names: Harvard exposes
+    # `unit` / `add_coverage`, demo.dataverse.org exposes `geographic_unit` /
+    # `add_geographic_coverage`. Resolve at runtime rather than assuming either.
     if meta.get("geographicUnit"):
-        ds.geospatial.unit.append(meta["geographicUnit"])
+        _set_geo_unit(ds, meta["geographicUnit"])
     if meta.get("geographicCoverage"):
-        ds.geospatial.add_coverage(other_geographic_coverage=meta["geographicCoverage"])
+        _add_geo_coverage(ds, meta["geographicCoverage"])
 
     return ds
+
+
+def _set_geo_unit(ds, value: str) -> None:
+    """Set the geographic unit under whichever name this installation uses."""
+    for attr in ("geographic_unit", "unit"):
+        if not hasattr(ds.geospatial, attr):
+            continue
+        current = getattr(ds.geospatial, attr)
+        if isinstance(current, list):
+            current.append(value)
+        else:
+            setattr(ds.geospatial, attr, value)
+        return
+    raise AttributeError(
+        "no geographic unit field on this installation's geospatial block; "
+        f"available: {sorted(ds.geospatial.model_fields)}"
+    )
+
+
+def _add_geo_coverage(ds, value: str) -> None:
+    """Add free-text geographic coverage under whichever method name exists."""
+    for method in ("add_geographic_coverage", "add_coverage"):
+        fn = getattr(ds.geospatial, method, None)
+        if fn is not None:
+            fn(other_geographic_coverage=value)
+            return
+    raise AttributeError(
+        "no geographic coverage method on this installation's geospatial block"
+    )
 
 
 def attach_files(ds, rows: pd.DataFrame, files_dir: Path):

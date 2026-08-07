@@ -79,8 +79,20 @@ def list_files(files_dir: Path, extensions: list[str] | None = None) -> list[str
     return sorted(names)
 
 
+def expand_url(value: str, template: str) -> str:
+    """Expand a bare identifier into a full URL.
+
+    A value that is already a URL is returned unchanged, so a column holding a
+    mix of OCHRE UUIDs and full links resolves correctly either way.
+    """
+    value = str(value).strip()
+    if value.lower().startswith(("http://", "https://")):
+        return value
+    return template.format(value=value)
+
+
 def format_description(raw: str, cfg: BatchConfig) -> str:
-    """Turn one or more raw URLs into the project's HTML description format.
+    """Turn one or more raw links or identifiers into the HTML description format.
 
     Reproduces both variants already present in the collection:
         one link   ->  OCHRE link: <a href="URL">URL</a>
@@ -90,7 +102,11 @@ def format_description(raw: str, cfg: BatchConfig) -> str:
     if raw is None or (isinstance(raw, float) and pd.isna(raw)):
         return ""
 
-    urls = [u.strip() for u in str(raw).split(spec.link_separator) if u.strip()]
+    urls = [
+        expand_url(u, spec.link_url_template)
+        for u in str(raw).split(spec.link_separator)
+        if u.strip()
+    ]
     if not urls:
         return ""
 

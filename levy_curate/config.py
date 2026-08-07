@@ -90,6 +90,11 @@ class ScaffoldSpec:
     partial: str | None = None
     link_column: str = "metadata_link"
     link_separator: str = ";"
+    # Expands a bare identifier into a full URL, e.g.
+    #   "https://pi.lib.uchicago.edu/1001/org/ochre/{value}"
+    # Values that are already URLs are passed through untouched, so a column
+    # mixing UUIDs and full links resolves correctly either way.
+    link_url_template: str = "{value}"
     description_template: str = 'OCHRE link: <a href="{url}">{url}</a>'
     multi_description_template: str = 'OCHRE link(s): {links}'
     link_item_template: str = '<a href="{url}">{url}</a>'
