@@ -1,12 +1,66 @@
-*.jpg
+# ---- Credentials: never commit ----
+.env
+*.env
+secrets.yaml
+
+# ---- OS / editor / Python cruft ----
+*.bak
 .DS_Store
-junk/
-__pycache__/
-pyDataverse_demo/
-pyDataverse_templates/
-templates/
-2012/junk/
-json/files/
-json/test/
-json/uploaded/
 .ipynb_checkpoints/
+__pycache__/
+*.pyc
+~$*
+
+# ---- Bulk data files ----
+# Deposit files live in Box / OneDrive, not in this repo.
+# Metadata CSVs and upload manifests in these directories ARE tracked;
+# only the directories holding the actual files are excluded.
+summer2026/fieldbooksandMC/
+summer2026/pottery/
+summer2026/recent_photos/
+summer2026/videos/
+illustrations/files/
+files/
+
+# ---- Legacy bulk data (1.9 GB) ----
+legacy_data_and_scripts/2017/
+legacy_data_and_scripts/sample_content/
+# pilot/ holds the original 2012 scripts alongside ~146 MB of generated
+# payloads and image dumps. Keep the scripts; drop the bulk.
+legacy_data_and_scripts/pilot/junk/
+legacy_data_and_scripts/pilot/2012/junk/
+legacy_data_and_scripts/pilot/json/files/
+legacy_data_and_scripts/pilot/json/uploaded/
+legacy_data_and_scripts/missing_data/
+legacy_data_and_scripts/upload_fail/
+legacy_data_and_scripts/upload_fail.zip
+
+# ---- Deposit file types, wherever they land ----
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.tif
+*.TIF
+*.tiff
+*.pdf
+*.PDF
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.zip
+
+# ---- Large derived tables (re-harvestable from the Dataverse API) ----
+# Keep the small DOI exports; drop the multi-megabyte intermediates.
+files_to_add.csv
+missing_files.csv
+photos_dois_datasets.csv
+illustrations_dois.csv
+
+# ---- Pipeline outputs ----
+manifests/
+*_missing_files.csv
+*_missing_metadata.csv
+*_file_dois.csv
+.pytest_cache/

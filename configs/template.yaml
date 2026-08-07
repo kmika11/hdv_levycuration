@@ -1,0 +1,137 @@
+# ============================================================================
+# Batch config template -- copy this to configs/<your-batch>.yaml and edit.
+#
+#   cp configs/template.yaml configs/mybatch.yaml
+#   python -m levy_curate scaffold configs/mybatch.yaml
+#   python -m levy_curate validate configs/mybatch.yaml
+#   python -m levy_curate plan     configs/mybatch.yaml
+#   python -m levy_curate deposit  configs/mybatch.yaml
+#
+# Nothing secret belongs in this file. API tokens live in .env only.
+#
+# Machine-specific settings (insecure_ssl, n_parallel, sleep_between_datasets)
+# are deliberately ABSENT here -- they fall back to .env, so this file stays
+# portable across machines and users. Add them only to override per batch.
+# ============================================================================
+
+# Identifies the batch. Used for the manifest filename and report filenames.
+name: mybatch
+
+# Collection (dataverse) alias to deposit into -- the last path segment of the
+# collection URL, e.g. https://demo.dataverse.org/dataverse/<alias>
+collection: your-collection-alias
+
+# ---------------------------------------------------------------- files ----
+
+# Directory holding the files to deposit. Relative paths resolve from the
+# repo root. Deposit files themselves should not be committed.
+files_dir: mybatch/files
+
+# The complete metadata table. Written by `scaffold`, read by everything after.
+inventory: mybatch/metadata_mybatch.csv
+
+# ------------------------------------------------------------- scaffold ----
+
+scaffold:
+  # The only file you prepare by hand. Needs a filename column and a column
+  # holding a link or identifier. Repeat a filename across rows to attach
+  # several links to one file.
+  partial: mybatch/mybatch_links.csv
+
+  # Canonical name of the link column, after column_map is applied.
+  link_column: metadata_link
+
+  # Separator when one cell holds several links.
+  link_separator: ";"
+
+  # Only these extensions are treated as depositable. Leave empty for all.
+  file_extensions: [tif, tiff]
+
+  # Where scaffold writes. Normally matches `inventory` above.
+  output: mybatch/metadata_mybatch.csv
+
+  # Expands a bare identifier into a full URL. Use "{value}" alone if the
+  # partial CSV already holds complete URLs. Values that already start with
+  # http:// or https:// are passed through untouched either way.
+  link_url_template: "https://example.org/resolver/{value}"
+
+  # How descriptions are rendered. {url} is one expanded link.
+  description_template: 'Link: <a href="{url}">{url}</a>'
+  # Used when a file has more than one link. {links} is the joined list.
+  multi_description_template: 'Link(s): {links}'
+  # How each link is rendered inside multi_description_template.
+  link_item_template: '<a href="{url}">{url}</a>'
+
+  # Dataset abstract. {key} is the grouping key, {title} the dataset title.
+  dataset_description_template: "Files from {key}."
+
+# ----------------------------------------------------------- column map ----
+
+# Rename incoming spreadsheet columns to the canonical schema. Edit this
+# rather than the spreadsheet, so the source file stays untouched.
+# Header whitespace and BOM markers are stripped automatically.
+column_map:
+  File: filename
+  UUID: metadata_link
+
+# ------------------------------------------------------------- grouping ----
+
+# How files are partitioned into datasets. Pick ONE strategy.
+grouping:
+  # by_column          -- dataset_title already exists as a column
+  #   strategy: by_column
+  #   column: dataset
+  #
+  # by_filename_regex  -- capture a key from the filename. A two-digit capture
+  #                       expands to a four-digit year (A99_ -> 1999).
+  #   strategy: by_filename_regex
+  #   pattern: '^[A-Za-z](\d{2})_'
+  #   two_digit_year_pivot: 49
+  #
+  # by_chunk           -- fixed-size buckets in sorted filename order
+  #   strategy: by_chunk
+  #   size: 500
+  strategy: by_chunk
+  size: 500
+
+  # {key} is the grouping key. Use a literal string for a single dataset.
+  title_template: "Dataset {key}"
+
+# -------------------------------------------------------------- deposit ----
+
+# Must match a license offered by the target installation, exactly.
+license: "CC BY-NC-ND 4.0"
+
+# Run log. Automatically scoped to the target: mybatch.demo.json /
+# mybatch.harvard.json, so a demo run can never mask a production one.
+manifest: manifests/mybatch.json
+
+# ------------------------------------------------------------ constants ----
+
+# Applied to every dataset in this batch.
+constants:
+  authors:
+    - name: "Lastname, Firstname"
+      affiliation: "Your Institution"
+      # Optional persistent identifier. `orcid:` is shorthand; for others use
+      #   identifier: "https://ror.org/..."
+      #   identifier_scheme: "ROR"     # ORCID | ROR | ISNI | VIAF | GND | ...
+      orcid: "0000-0000-0000-0000"
+
+  contact:
+    name: "Lastname, Firstname"
+    email: "contact@example.org"
+
+  # Must match the installation's controlled vocabulary exactly.
+  subject: "Arts and Humanities"
+
+  # Semicolon-separated.
+  keywords: "Keyword one;Keyword two"
+
+  language: "English"
+  funding: "Your Funder"
+  depositor: "Lastname, Firstname"
+
+  geo:
+    coverage: "Place name"
+    unit: "City"

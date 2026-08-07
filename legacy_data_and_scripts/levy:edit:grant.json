@@ -1,0 +1,22 @@
+{
+    "fields": [
+		{
+            "typeName": "grantNumber",
+            "multiple": true,
+            "typeClass": "compound",
+            "value": [
+                {
+                    "grantNumberAgency": {
+                        "typeName": "grantNumberAgency",
+                        "multiple": false,
+                        "typeClass": "primitive",
+                        "value": "The Leon Levy Foundation"
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+
+

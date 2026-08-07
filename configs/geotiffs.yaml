@@ -1,0 +1,79 @@
+# Final batch: GeoTIFFs.
+#
+# Fill in files_dir and scaffold.partial, then:
+#   python -m levy_curate scaffold configs/geotiffs.yaml
+#   python -m levy_curate validate configs/geotiffs.yaml
+#   python -m levy_curate plan     configs/geotiffs.yaml
+#   python -m levy_curate deposit  configs/geotiffs.yaml
+
+name: geotiffs
+collection: ashkelonexcavations
+
+# Where the .tif files live. Not committed -- see .gitignore.
+files_dir: geotiffs/files
+
+# Written by `scaffold`, read by everything downstream.
+inventory: geotiffs/metadata_geotiffs.csv
+
+scaffold:
+  # The only file you prepare by hand: filename + OCHRE UUID per row.
+  # Repeat a filename on several rows to attach multiple links to one file.
+  partial: geotiffs/geotiffs_links.csv
+  link_column: metadata_link
+  link_separator: ";"
+  file_extensions: [tif, tiff]
+  output: geotiffs/metadata_geotiffs.csv
+
+  # The partial CSV holds bare UUIDs, not URLs. This expands them into the
+  # same persistent-link form used by every previous batch. Values that are
+  # already full URLs pass through untouched.
+  link_url_template: "https://pi.lib.uchicago.edu/1001/org/ochre/{value}"
+
+  # Reproduces the formats already used across the collection.
+  description_template: 'OCHRE link: <a href="{url}">{url}</a>'
+  multi_description_template: 'OCHRE link(s): {links}'
+  link_item_template: '<a href="{url}">{url}</a>'
+
+  dataset_description_template: "Georeferenced site plans and maps from excavation: 1985-2016."
+
+# Rename incoming columns to the canonical schema. Add entries here rather
+# than editing the spreadsheet.
+column_map:
+  File: filename
+  UUID: metadata_link
+
+# All GeoTIFFs into one dataset. Alternatives:
+#   by_filename_regex  pattern: '^[A-Za-z](\d{2})_'   (year from filename)
+#   by_chunk           size: 500                       (fixed-size buckets)
+grouping:
+  strategy: by_chunk
+  size: 10000
+  title_template: "Leon Levy Expedition to Ashkelon Dataset: Georeferenced Imagery"
+
+license: "CC BY-NC-ND 4.0"
+
+# insecure_ssl / n_parallel / sleep_between_datasets are intentionally omitted.
+# They describe your machine and network, not this batch, so they live in .env
+# (DATAVERSE_INSECURE_SSL, DATAVERSE_N_PARALLEL,
+# DATAVERSE_SLEEP_BETWEEN_DATASETS). Add a key here only to override for this
+# batch specifically.
+
+manifest: manifests/geotiffs.json
+
+# Constant across every dataset in this collection.
+constants:
+  authors:
+    - name: "Pierce, George"
+      affiliation: "Brigham Young University"
+      orcid: "0000-0002-8332-8495"
+  contact:
+    name: "Master, Daniel M."
+    email: "daniel.master@wheaton.edu"
+  subject: "Arts and Humanities"
+  keywords: "Archaeology"
+  language: "English"
+  funding: "The Leon Levy Foundation"
+  depositor: "Mika, Katherine"
+  geo:
+    coverage: "Ashkelon"
+    unit: "City"
