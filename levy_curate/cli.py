@@ -104,7 +104,7 @@ def cmd_status(args) -> int:
     cfg = _cfg(args)
     print(cfg.summary())
     print()
-    print(Manifest(cfg.manifest, cfg.name).report())
+    print(Manifest(cfg.manifest_path(), cfg.name).report())
     return 0
 
 

@@ -36,11 +36,20 @@ class Credentials:
 def load_credentials(target: str | None = None) -> Credentials:
     """Read Dataverse credentials from the environment.
 
+    Precedence, highest first:
+
+        1. the `target` argument (what `--target harvard` passes)
+        2. .env
+        3. "demo"
+
+    Note that .env deliberately overrides shell environment variables. A stale
+    `export DATAVERSE_TARGET=harvard` in a forgotten terminal must not be able
+    to silently redirect a deposit to production; the file is authoritative.
+
     Parameters
     ----------
     target : str, optional
-        "demo" or "harvard". Defaults to $DATAVERSE_TARGET, which itself
-        defaults to "demo" so an untested run cannot reach production.
+        "demo" or "harvard".
 
     Return
     ------
@@ -185,6 +194,19 @@ class BatchConfig:
         """Absolute path the scaffolder writes its complete metadata table to."""
         p = Path(self.scaffold.output).expanduser()
         return p if p.is_absolute() else (self.root / p)
+
+    def manifest_path(self) -> Path:
+        """Manifest path scoped to the target installation.
+
+        manifests/geotiffs.json -> manifests/geotiffs.demo.json
+
+        Without this, a demo run and a production run share one file: the demo
+        entries read as "already uploaded" and the production deposit silently
+        skips every dataset.
+        """
+        target = self.credentials.target
+        p = self.manifest
+        return p.with_name(f"{p.stem}.{target}{p.suffix}")
 
     def summary(self) -> str:
         """A short, token-free description for printing before a run."""

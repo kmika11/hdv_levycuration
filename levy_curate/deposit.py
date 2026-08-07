@@ -192,6 +192,27 @@ def attach_files(ds, rows: pd.DataFrame, files_dir: Path):
     return ds
 
 
+def verify_upload(ds, expected: int, creds) -> str | None:
+    """Did this dataset actually land, despite an error being raised?
+
+    Returns its PID when the dataset exists and holds exactly `expected` files,
+    otherwise None. Any problem reaching the API is treated as "not verified",
+    so an ambiguous case is still recorded as a failure.
+    """
+    pid = getattr(ds, "p_id", None)
+    if not pid:
+        return None
+
+    try:
+        from .harvest import dataset_files
+
+        actual = len(dataset_files(pid, creds))
+    except Exception:
+        return None
+
+    return pid if actual == expected else None
+
+
 def plan(df: pd.DataFrame, cfg: BatchConfig) -> str:
     """Describe what a deposit would do. No network calls, nothing created."""
     groups = split_by_dataset(df)
@@ -226,7 +247,7 @@ def deposit(
 
     if dry_run:
         on_progress(plan(df, cfg))
-        return Manifest(cfg.manifest, cfg.name)
+        return Manifest(cfg.manifest_path(), cfg.name)
 
     if cfg.insecure_ssl:
         disable_ssl_verification()
@@ -235,7 +256,7 @@ def deposit(
     dataverse = dataverse or Dataverse(server_url=creds.url, api_token=creds.token)
 
     groups = split_by_dataset(df)
-    man = Manifest(cfg.manifest, cfg.name)
+    man = Manifest(cfg.manifest_path(), cfg.name)
     man.data["target"] = f"{creds.target}:{creds.url}"
     man.save()
 
@@ -264,10 +285,23 @@ def deposit(
             man.succeeded(title, pid, len(rows))
             on_progress(f"    uploaded -> {pid}")
 
-        except Exception as exc:  # recorded, then re-raised after the loop context
-            man.failed(title, exc)
-            on_progress(f"    FAILED: {type(exc).__name__}: {exc}")
-            raise
+        except Exception as exc:
+            # Dataverse can return an error *after* the files have actually
+            # landed -- the 500-at-registration case in errors.md. Believing
+            # the exception leads to a retry that uploads everything twice, so
+            # check what really exists before recording a failure.
+            landed = verify_upload(ds, len(rows), creds)
+            if landed:
+                man.succeeded(title, landed, len(rows))
+                on_progress(
+                    f"    upload reported an error but all {len(rows)} files are "
+                    f"registered -> {landed}"
+                )
+                on_progress(f"    (suppressed: {type(exc).__name__}: {str(exc)[:120]})")
+            else:
+                man.failed(title, exc, pid=getattr(ds, "p_id", None))
+                on_progress(f"    FAILED: {type(exc).__name__}: {exc}")
+                raise
 
         if i < len(todo) - 1 and cfg.sleep_between_datasets:
             on_progress(f"    waiting {cfg.sleep_between_datasets}s (rate limiter)")

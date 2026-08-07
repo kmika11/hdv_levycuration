@@ -123,9 +123,9 @@ def harvest_batch(cfg: BatchConfig, version: str = ":draft") -> pd.DataFrame:
     """Harvest DOIs for every dataset recorded in this batch's manifest."""
     from .manifest import Manifest
 
-    man = Manifest(cfg.manifest, cfg.name)
+    man = Manifest(cfg.manifest_path(), cfg.name)
     pids = man.pids()
     if not pids:
-        raise RuntimeError(f"no uploaded datasets recorded in {cfg.manifest}")
+        raise RuntimeError(f"no uploaded datasets recorded in {cfg.manifest_path()}")
     out = cfg.root / f"{cfg.name}_file_dois.csv"
     return file_dois(pids, cfg.credentials, version=version, out=out)

@@ -344,6 +344,41 @@ def test_manifest_survives_partial_run(tmp_path):
     assert json.loads(path.read_text())["datasets"]["D1"]["status"] == "in_progress"
 
 
+def test_manifest_path_is_scoped_to_target(tmp_path):
+    """A demo run and a production run must never share a manifest."""
+    cfg = make_batch(tmp_path, filenames=["a.tif"], manifest="manifests/geotiffs.json")
+    assert cfg.manifest_path().name == "geotiffs.demo.json"
+
+    cfg.target = "harvard"  # what `--target harvard` sets
+    assert cfg.manifest_path().name == "geotiffs.harvard.json"
+
+
+def test_demo_run_cannot_mark_a_harvard_deposit_as_done(tmp_path):
+    """The regression this guards: production silently skipping every dataset."""
+    cfg = make_batch(tmp_path, filenames=["a.tif"], manifest="manifests/b.json")
+
+    demo = Manifest(cfg.manifest_path(), cfg.name)
+    demo.succeeded("D1", "doi:10.5072/DEMO", 1)
+
+    cfg.target = "harvard"
+    harvard = Manifest(cfg.manifest_path(), cfg.name)
+    assert harvard.pending(["D1"]) == ["D1"], "production must still deposit D1"
+    assert harvard.pids() == {}
+
+
+def test_dotenv_wins_over_shell_environment(tmp_path, monkeypatch):
+    """.env is authoritative, so a stale `export` cannot redirect a run.
+
+    The dangerous direction is a leftover shell variable silently sending a
+    deposit to production; making the file win removes that possibility.
+    """
+    from levy_curate.config import load_credentials
+
+    monkeypatch.setenv("DATAVERSE_TARGET", "harvard")
+    assert load_credentials().target == "demo"          # .env value, not the export
+    assert load_credentials("harvard").target == "harvard"  # explicit arg still wins
+
+
 # ----------------------------------------------------------------- deposit
 
 
@@ -404,6 +439,48 @@ def test_author_identifier_scheme_can_be_overridden(tmp_path):
     )
     author = build_dataset_metadata(_valid_frame(), cfg)["author"][0]
     assert author["authorIdentifierScheme"] == "ROR"
+
+
+class _FakeDataset:
+    """Stands in for an easyDataverse Dataset that has been uploaded."""
+
+    def __init__(self, pid):
+        self.p_id = pid
+
+
+def test_verify_upload_confirms_files_that_actually_landed(tmp_path, monkeypatch):
+    """The errors.md case: a 500 raised after every file registered."""
+    from levy_curate import deposit as dep
+
+    monkeypatch.setattr(
+        "levy_curate.harvest.dataset_files", lambda pid, creds, version=":draft": [{}] * 129
+    )
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) == "doi:10.5072/X"
+
+
+def test_verify_upload_rejects_a_partial_upload(tmp_path, monkeypatch):
+    from levy_curate import deposit as dep
+
+    monkeypatch.setattr(
+        "levy_curate.harvest.dataset_files", lambda pid, creds, version=":draft": [{}] * 40
+    )
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) is None
+
+
+def test_verify_upload_is_conservative_when_it_cannot_check(tmp_path, monkeypatch):
+    """No PID, or an unreachable API, must never be read as success."""
+    from levy_curate import deposit as dep
+
+    cfg = make_batch(tmp_path, filenames=["a.tif"])
+    assert dep.verify_upload(_FakeDataset(None), 129, cfg.credentials) is None
+
+    def boom(pid, creds, version=":draft"):
+        raise ConnectionError("unreachable")
+
+    monkeypatch.setattr("levy_curate.harvest.dataset_files", boom)
+    assert dep.verify_upload(_FakeDataset("doi:10.5072/X"), 129, cfg.credentials) is None
 
 
 def test_plan_is_read_only_and_lists_datasets(tmp_path):

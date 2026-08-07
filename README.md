@@ -186,6 +186,23 @@ python -m pytest tests/ -q
 
 ---
 
+## Choosing an installation
+
+```bash
+python -m levy_curate deposit configs/geotiffs.yaml --target harvard
+```
+
+or set `DATAVERSE_TARGET=harvard` in `.env`.
+
+**`.env` overrides shell environment variables**, deliberately. A stale
+`export DATAVERSE_TARGET=harvard` in a forgotten terminal must not be able to silently
+redirect a deposit to production, so the file is authoritative. Only `--target` outranks it.
+
+Depositing to Harvard requires typing the batch name to confirm. Every command prints its
+resolved target — check that line before proceeding.
+
+---
+
 ## Resuming a failed deposit
 
 The manifest is written *during* the loop, not after. If a batch dies partway, re-run
@@ -195,7 +212,27 @@ The manifest is written *during* the loop, not after. If a batch dies partway, r
 resuming: 4 dataset(s) already uploaded, 2 to go
 ```
 
+Manifests are **scoped to the target**: `manifests/geotiffs.demo.json` and
+`manifests/geotiffs.harvard.json` are separate files. Without this, a successful demo run
+would mark datasets done and a production deposit would silently skip all of them.
+
 `manifest.pids()` returns `{dataset_title: pid}`, the successor to `upload_pids.json`.
+
+### When Dataverse reports a failure that isn't one
+
+File registration can return a 500 *after* every file has actually landed — the case in
+[errors.md](errors.md). Believing it leads to a retry that uploads everything twice.
+
+On any upload exception the pipeline asks Dataverse what really exists. If the dataset holds
+exactly the expected number of files, the run is recorded as successful with the error noted:
+
+```
+upload reported an error but all 129 files are registered -> doi:10.70122/FK2/VZ6GBX
+```
+
+Anything ambiguous — no PID, unreachable API, a partial count — is still recorded as a
+failure and re-raised. This does not retry or paper over a genuine error; it only refuses to
+trust a report contradicted by the API.
 
 ---
 
